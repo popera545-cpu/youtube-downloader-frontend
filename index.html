@@ -19,7 +19,7 @@
         <h1 class="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-red-500 to-amber-500 bg-clip-text text-transparent">
             YTDL Downloader
         </h1>
-        <p class="text-slate-400 mt-2 text-sm">הורדת שירים וסרטונים מיוטיוב ישירות לנייד או למחשב</p>
+        <p class="text-slate-400 mt-2 text-sm">הורדת שירים וסרטונים מיוטיוב ישירות ללא חסימות</p>
     </header>
 
     <main class="flex-grow flex items-center justify-center px-4">
@@ -33,17 +33,17 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <button onclick="startDownload('mp3')" id="btn-mp3" class="py-3 px-6 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
+                    <button onclick="startDownload('audio')" id="btn-mp3" class="py-3 px-6 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
                         <span>🎵 הורד MP3</span>
                     </button>
-                    <button onclick="startDownload('mp4')" id="btn-mp4" class="py-3 px-6 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
+                    <button onclick="startDownload('video')" id="btn-mp4" class="py-3 px-6 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
                         <span>🎥 הורד MP4</span>
                     </button>
                 </div>
 
                 <div id="statusArea" class="hidden space-y-4 pt-4 border-t border-slate-800/50">
                     <div class="flex justify-between items-center text-sm">
-                        <span id="statusText" class="text-slate-400 font-medium">מעבד את הבקשה...</span>
+                        <span id="statusText" class="text-slate-400 font-medium">מעבד...</span>
                         <span id="statusSpinner" class="animate-spin rounded-full h-5 w-5 border-2 border-red-500 border-t-transparent"></span>
                     </div>
                 </div>
@@ -57,13 +57,19 @@
     </footer>
 
     <script>
-        // שרת Render האישי שלך (שהקמנו מקודם)
-        const API_URL = "https://youtube-downloader-backend-tvk9.onrender.com/download";
+        // פונקציה לחילוץ ה-ID של הסרטון מהקישור
+        function extractVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
 
-        async function startDownload(type) {
+        async function startDownload(mode) {
             const urlInput = document.getElementById('youtubeUrl').value.trim();
-            if (!urlInput) {
-                alert('בבקשה תדביק קישור מיוטיוב!');
+            const videoId = extractVideoId(urlInput);
+
+            if (!videoId) {
+                alert('בבקשה תדביק קישור יוטיוב תקין!');
                 return;
             }
 
@@ -75,57 +81,75 @@
 
             statusArea.classList.remove('hidden');
             statusSpinner.classList.remove('hidden');
-            statusText.innerText = "השרת מתחבר ליוטיוב ומוריד את הקובץ... (עשוי לקחת עד חצי דקה)";
+            statusText.innerText = "מתחבר לשרת עוקף חסימות... (זה לוקח כמה שניות)";
             btnMp3.disabled = true;
             btnMp4.disabled = true;
 
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url: urlInput, type: type })
-                });
+            // רשימת שרתי גיבוי של Invidious במידה ואחד עמוס
+            const instances = [
+                "https://invidious.nerdvpn.de",
+                "https://yewtu.be",
+                "https://inv.tux.im",
+                "https://invidious.no-logs.com"
+            ];
 
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error || 'שגיאה בעיבוד הסרטון בשרת.');
-                }
+            let success = false;
 
-                statusText.innerText = "הקובץ מוכן! מוריד למכשיר שלך...";
-                statusSpinner.classList.add('hidden');
+            for (let instance of instances) {
+                try {
+                    statusText.innerText = `מנסה דרך שרת גיבוי...`;
+                    const res = await fetch(`${instance}/api/v1/videos/${videoId}`);
+                    if (!res.ok) continue;
 
-                const blob = await response.blob();
-                const downloadUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
+                    const data = await res.json();
+                    
+                    let targetUrl = "";
+                    let extension = "mp4";
 
-                // קבלת שם הקובץ מהתגובה
-                const disposition = response.headers.get('content-disposition');
-                let filename = `download.${type}`;
-                if (disposition && disposition.indexOf('attachment') !== -1) {
-                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-                    const matches = filenameRegex.exec(disposition);
-                    if (matches != null && matches[1]) { 
-                        filename = matches[1].replace(/['"]/g, '');
+                    if (mode === 'audio') {
+                        // סינון קובצי סאונד בלבד
+                        const audioStreams = data.adaptiveFormats.filter(f => f.type.startsWith('audio/'));
+                        if (audioStreams.length > 0) {
+                            targetUrl = audioStreams[0].url;
+                            extension = "mp3";
+                        }
+                    } else {
+                        // וידאו משולב באיכות הכי טובה
+                        const videoStreams = data.formatStreams;
+                        if (videoStreams.length > 0) {
+                            targetUrl = videoStreams[videoStreams.length - 1].url;
+                        }
                     }
-                }
 
-                a.download = decodeURIComponent(filename);
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                
-                statusText.innerText = "ההורדה הושלמה!";
-            } catch (error) {
-                alert('שגיאה: ' + error.message);
+                    if (targetUrl) {
+                        statusText.innerText = "ההורדה החלה!";
+                        statusSpinner.classList.add('hidden');
+
+                        // יצירת לינק להורדה ישירה משרתי הוידאו
+                        const a = document.createElement('a');
+                        a.href = targetUrl;
+                        a.target = "_blank"; // פותח בחלון חדש להורדה חלקה
+                        a.download = `${data.title}.${extension}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+
+                        success = true;
+                        break; // הצלחנו, יוצאים מהלולאה
+                    }
+                } catch (e) {
+                    console.log("Failed with instance:", instance, e);
+                }
+            }
+
+            if (!success) {
+                alert('כל שרתי הגיבוי עמוסים כרגע. אנא נסה שוב בעוד מספר רגעים.');
                 statusText.innerText = "ההורדה נכשלה.";
                 statusSpinner.classList.add('hidden');
-            } finally {
-                btnMp3.disabled = false;
-                btnMp4.disabled = false;
             }
+
+            btnMp3.disabled = false;
+            btnMp4.disabled = false;
         }
     </script>
 </body>
