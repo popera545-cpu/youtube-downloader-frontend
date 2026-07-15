@@ -19,7 +19,7 @@
         <h1 class="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-red-500 to-amber-500 bg-clip-text text-transparent">
             YTDL Downloader
         </h1>
-        <p class="text-slate-400 mt-2 text-sm">הורדת שירים וסרטונים מיוטיוב במהירות ובחינם</p>
+        <p class="text-slate-400 mt-2 text-sm">הורדת שירים וסרטונים מיוטיוב ישירות לנייד או למחשב</p>
     </header>
 
     <main class="flex-grow flex items-center justify-center px-4">
@@ -33,17 +33,17 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <button onclick="startDownload('audio')" id="btn-mp3" class="py-3 px-6 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 font-bold rounded-xl shadow-lg shadow-red-900/40 transition-all duration-200 active:scale-95 flex justify-center items-center gap-2">
+                    <button onclick="startDownload('mp3')" id="btn-mp3" class="py-3 px-6 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
                         <span>🎵 הורד MP3</span>
                     </button>
-                    <button onclick="startDownload('auto')" id="btn-mp4" class="py-3 px-6 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 font-bold rounded-xl shadow-lg shadow-amber-900/40 transition-all duration-200 active:scale-95 flex justify-center items-center gap-2">
+                    <button onclick="startDownload('mp4')" id="btn-mp4" class="py-3 px-6 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 font-bold rounded-xl shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2">
                         <span>🎥 הורד MP4</span>
                     </button>
                 </div>
 
                 <div id="statusArea" class="hidden space-y-4 pt-4 border-t border-slate-800/50">
                     <div class="flex justify-between items-center text-sm">
-                        <span id="statusText" class="text-slate-400 font-medium">מתחיל הורדה...</span>
+                        <span id="statusText" class="text-slate-400 font-medium">מעבד את הבקשה...</span>
                         <span id="statusSpinner" class="animate-spin rounded-full h-5 w-5 border-2 border-red-500 border-t-transparent"></span>
                     </div>
                 </div>
@@ -57,10 +57,10 @@
     </footer>
 
     <script>
-        // שימוש בשרת Cobalt API הציבורי והחזק שעוקף חסימות ב-100%
-        const API_URL = "https://co.wuk.sh/api/";
+        // שרת Render האישי שלך (שהקמנו מקודם)
+        const API_URL = "https://youtube-downloader-backend-tvk9.onrender.com/download";
 
-        async function startDownload(mode) {
+        async function startDownload(type) {
             const urlInput = document.getElementById('youtubeUrl').value.trim();
             if (!urlInput) {
                 alert('בבקשה תדביק קישור מיוטיוב!');
@@ -73,58 +73,56 @@
             const btnMp3 = document.getElementById('btn-mp3');
             const btnMp4 = document.getElementById('btn-mp4');
 
-            // נעילת כפתורים והצגת סטטוס
             statusArea.classList.remove('hidden');
             statusSpinner.classList.remove('hidden');
-            statusText.innerText = "מעבד את הסרטון בשרת המאובטח... (לוקח כמה שניות)";
+            statusText.innerText = "השרת מתחבר ליוטיוב ומוריד את הקובץ... (עשוי לקחת עד חצי דקה)";
             btnMp3.disabled = true;
             btnMp4.disabled = true;
 
             try {
-                // שליחת בקשה לשרת של קובאלט
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
-                        'Accept': 'application/json',
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        url: urlInput,
-                        downloadMode: mode, // 'audio' למוזיקה או 'auto' לסרטון
-                        audioFormat: 'mp3',
-                        videoQuality: '1080'
-                    })
+                    body: JSON.stringify({ url: urlInput, type: type })
                 });
 
-                const result = await response.json();
-
-                if (!response.ok || result.status === 'error') {
-                    throw new Error(result.text || 'השרת נתקל בשגיאה בעיבוד הקישור.');
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || 'שגיאה בעיבוד הסרטון בשרת.');
                 }
 
-                if (result.status === 'redirect' || result.status === 'tunnel') {
-                    statusText.innerText = "ההורדה מתחילה!";
-                    statusSpinner.classList.add('hidden');
+                statusText.innerText = "הקובץ מוכן! מוריד למכשיר שלך...";
+                statusSpinner.classList.add('hidden');
 
-                    // פתיחת הקישור להורדה ישירה בדפדפן של המשתמש
-                    const a = document.createElement('a');
-                    a.href = result.url;
-                    a.download = result.filename || 'download';
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    
-                    statusText.innerText = "הקובץ נשלח לדפדפן בהצלחה!";
-                } else {
-                    throw new Error('פורמט תגובה לא נתמך.');
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+
+                // קבלת שם הקובץ מהתגובה
+                const disposition = response.headers.get('content-disposition');
+                let filename = `download.${type}`;
+                if (disposition && disposition.indexOf('attachment') !== -1) {
+                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                    const matches = filenameRegex.exec(disposition);
+                    if (matches != null && matches[1]) { 
+                        filename = matches[1].replace(/['"]/g, '');
+                    }
                 }
 
+                a.download = decodeURIComponent(filename);
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                statusText.innerText = "ההורדה הושלמה!";
             } catch (error) {
                 alert('שגיאה: ' + error.message);
                 statusText.innerText = "ההורדה נכשלה.";
                 statusSpinner.classList.add('hidden');
             } finally {
-                // שחרור כפתורים
                 btnMp3.disabled = false;
                 btnMp4.disabled = false;
             }
