@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YTDL Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Heebo', sans-serif;
+            background: radial-gradient(circle at center, #1e1b4b 0%, #0f172a 100%);
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col justify-between">
+
+    <header class="p-6 text-center">
+        <h1 class="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-red-500 to-amber-500 bg-clip-text text-transparent">
+            YTDL Downloader
+        </h1>
+        <p class="text-slate-400 mt-2 text-sm">הורדת שירים וסרטונים מיוטיוב במהירות ובחינם</p>
+    </header>
+
+    <main class="flex-grow flex items-center justify-center px-4">
+        <div class="max-w-xl w-full bg-slate-900/80 backdrop-blur-md p-8 rounded-2xl border border-slate-800 shadow-2xl">
+            
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">הדבק קישור מיוטיוב:</label>
+                    <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." 
+                           class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none text-left" dir="ltr">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="startDownload('mp3')" id="btn-mp3" class="py-3 px-6 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 font-bold rounded-xl shadow-lg shadow-red-900/40 transition-all duration-200 active:scale-95 flex justify-center items-center gap-2">
+                        <span>🎵 הורד MP3</span>
+                    </button>
+                    <button onclick="startDownload('mp4')" id="btn-mp4" class="py-3 px-6 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 font-bold rounded-xl shadow-lg shadow-amber-900/40 transition-all duration-200 active:scale-95 flex justify-center items-center gap-2">
+                        <span>🎥 הורד MP4</span>
+                    </button>
+                </div>
+
+                <div id="statusArea" class="hidden space-y-4 pt-4 border-t border-slate-800/50">
+                    <div class="flex justify-between items-center text-sm">
+                        <span id="statusText" class="text-slate-400 font-medium">מתחיל הורדה...</span>
+                        <span id="statusSpinner" class="animate-spin rounded-full h-5 w-5 border-2 border-red-500 border-t-transparent"></span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <footer class="p-6 text-center text-xs text-slate-600">
+        נבנה עם 💙 עבור Kol Popper
+    </footer>
+
+    <script>
+        // שימוש בכתובת השרת האמיתית שלך מרנדר!
+        const API_URL = "https://youtube-downloader-backend-tvk9.onrender.com/download";
+
+        async function startDownload(type) {
+            const urlInput = document.getElementById('youtubeUrl').value.trim();
+            if (!urlInput) {
+                alert('בבקשה תדביק קישור מיוטיוב!');
+                return;
+            }
+
+            const statusArea = document.getElementById('statusArea');
+            const statusText = document.getElementById('statusText');
+            const statusSpinner = document.getElementById('statusSpinner');
+            const btnMp3 = document.getElementById('btn-mp3');
+            const btnMp4 = document.getElementById('btn-mp4');
+
+            // נעילת כפתורים והצגת סטטוס
+            statusArea.classList.remove('hidden');
+            statusText.innerText = "מעבד את הסרטון בשרת... (זה עשוי לקחת חצי דקה)";
+            btnMp3.disabled = true;
+            btnMp4.disabled = true;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: urlInput, type: type })
+                });
+
+                if (!response.ok) {
+                    throw new Error('השרת החזיר שגיאה. בדוק שהקישור תקין.');
+                }
+
+                statusText.innerText = "ההורדה מתחילה בדפדפן!";
+                statusSpinner.classList.add('hidden');
+
+                // הפיכת התגובה של השרת לקובץ להורדה במחשב
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                
+                // שליפת שם הקובץ מהכותרת שהשרת שלח
+                const disposition = response.headers.get('content-disposition');
+                let filename = `download.${type}`;
+                if (disposition && disposition.indexOf('attachment') !== -1) {
+                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                    const matches = filenameRegex.exec(disposition);
+                    if (matches != null && matches[1]) { 
+                        filename = matches[1].replace(/['"]/g, '');
+                    }
+                }
+                
+                a.download = decodeURIComponent(filename);
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                statusText.innerText = "ההורדה הושלמה בהצלחה!";
+            } catch (error) {
+                alert('שגיאה: ' + error.message);
+                statusText.innerText = "ההורדה נכשלה.";
+                statusSpinner.classList.add('hidden');
+            } finally {
+                // שחרור כפתורים
+                btnMp3.disabled = false;
+                btnMp4.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
